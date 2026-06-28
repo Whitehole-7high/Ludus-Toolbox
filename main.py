@@ -1,0 +1,701 @@
+#Copyright (c) 2026 Whitehole
+#Released under the MIT License.
+#===========================================
+#文件名 main.py
+# 创建时间 2026-06-28
+# 项目 Ludus Toolbox
+#===========================================
+
+# 扩展 GUI界面
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog, scrolledtext
+
+# 扩展 文件、路径、日志相关
+import os
+import sys
+import logging
+from datetime import datetime
+
+# 扩展 执行批处理PowerShell脚本
+import subprocess
+
+# 扩展 注册表读写
+import winreg
+
+# 扩展 系统信息读取
+import psutil
+import platform
+from cpuinfo import get_cpu_info
+import wmi
+
+# ===================== 全局函数定义（不动）=====================
+#检测系统
+def get_hardware_info():
+    data = {
+        "cpu": "读取失败",
+        "gpu": "读取失败",
+        "ram": "读取失败",
+        "disk": "读取失败",
+        "temp": "读取失败",
+        "sys": "读取失败"
+    }
+    # CPU名称
+    try:
+        data["cpu"] = get_cpu_info()["brand_raw"]
+    except:
+        data["cpu"] = platform.processor()
+
+    # 内存总容量
+    ram_total = psutil.virtual_memory().total
+    data["ram"] = f"{round(ram_total / 1024**3, 1)} GB"
+
+    # C盘总容量
+    c_disk = psutil.disk_usage("C:\\")
+    data["disk"] = f"{round(c_disk.total / 1024**3)} GB"
+
+    # 系统版本
+    data["sys"] = f"{platform.system()} {platform.release()}"
+
+    # WMI读取显卡、CPU温度
+    try:
+        w = wmi.WMI()
+        # 显卡
+        gpu_list = [gpu.Name for gpu in w.Win32_VideoController()]
+        data["gpu"] = gpu_list[0] if gpu_list else "未识别显卡"
+        # CPU温度
+        temp_list = [t.CurrentTemperature for t in w.Win32_PerfFormattedData_Counters_ThermalZoneInformation() if t.CurrentTemperature > 0]
+        if temp_list:
+            data["temp"] = f"{min(temp_list)} C"
+    except:
+        pass
+    return data
+
+# 刷新首页硬件文本
+def refresh_hardware_label():
+    info = get_hardware_info()
+    cpu_text.config(text=info["cpu"])
+    gpu_text.config(text=info["gpu"])
+    ram_text.config(text=info["ram"])
+    disk_text.config(text=info["disk"])
+    temp_text.config(text=info["temp"])
+    sys_text.config(text=info["sys"])
+
+# ========== 切换页面函数 ==========
+def goto(page):
+    for p in all_pages:
+        p.pack_forget()
+    page.pack(fill="both", expand=True)
+
+# ========== 打开工具函数（修复路径，自动取程序根目录） ==========
+def open_tool(filename):
+    """打开同目录下的工具文件，filename填exe文件名就行"""
+    try:
+        # 兼容打包exe真实目录
+        if hasattr(sys, "_MEIPASS"):
+            app_dir = os.path.dirname(sys.executable)
+        else:
+            app_dir = os.path.dirname(os.path.abspath(__file__))
+        full_path = os.path.join(app_dir, filename)
+        os.startfile(full_path)
+    except Exception as e:
+        tk.messagebox.showerror("错误", f"找不到文件：{filename}\n完整路径：{full_path}")
+
+# ===================== 主程序入口（核心修复）=====================
+def main():
+    global cpu_text, gpu_text, ram_text, disk_text, temp_text, sys_text, all_pages
+    #main窗口初始化
+    root=tk.Tk()
+    root.title("Ludus Toolbox")
+    # 图标路径兼容打包
+    if hasattr(sys, "_MEIPASS"):
+        ico_path = os.path.join(os.path.dirname(sys.executable), "icon.ico")
+    else:
+        ico_path = "icon.ico"
+    root.iconbitmap(ico_path)
+    root.geometry("1300x650")
+    root.resizable(True, True)
+
+    # ========== 整体布局 ==========
+    sidebar = tk.Frame(root, width=150, bg="#1e293b")
+    sidebar.pack(side="left", fill="y")
+    sidebar.pack_propagate(False)
+
+    content = tk.Frame(root, bg="#f1f5f9")
+    content.pack(side="right", fill="both", expand=True)
+
+    # ========== 11个页面 ==========
+    page_home   = tk.Frame(content, bg="#f1f5f9")
+    page_cpu    = tk.Frame(content, bg="#f1f5f9")
+    page_stress = tk.Frame(content, bg="#f1f5f9")
+    page_ram    = tk.Frame(content, bg="#f1f5f9")
+    page_peri   = tk.Frame(content, bg="#f1f5f9")
+    page_gpu    = tk.Frame(content, bg="#f1f5f9")
+    page_mon    = tk.Frame(content, bg="#f1f5f9")
+    page_disk   = tk.Frame(content, bg="#f1f5f9")
+    page_game   = tk.Frame(content, bg="#f1f5f9")
+    page_check  = tk.Frame(content, bg="#f1f5f9")
+    page_other  = tk.Frame(content, bg="#f1f5f9")
+
+    all_pages = (page_home, page_cpu, page_stress, page_ram, page_peri,
+                 page_gpu, page_mon, page_disk, page_game, page_check, page_other)
+
+    # ========== 大按钮统一样式 ==========
+    big_btn = {
+        "width": 18,    # 按钮宽度
+        "height": 3,    # 按钮高度（两行文字）
+        "bg": "white",  # 按钮背景色
+        "relief": "groove",  # 按钮边框样式
+        "font": ("", 10),    # 字体大小
+        "cursor": "hand2",   # 鼠标移上去变手型
+    }
+
+    # ========== 侧边栏按钮 ==========
+    btn_style = {"width": 16, "height": 2, "relief": "flat",
+                 "bg": "#334155", "fg": "white", "activebackground": "#3b82f6",
+                 "anchor": "w", "padx": 15}
+
+    tk.Label(sidebar, text="Ludus Toolbox", bg="#1e293b", fg="white",
+             font=("", 14, "bold")).pack(pady=20)
+
+    menus = [
+        ("🏠 首页",       page_home),
+        ("🔲 处理器工具", page_cpu),
+        ("🔥 烤机工具",   page_stress),
+        ("💾 内存工具",   page_ram),
+        ("🎮 外设工具",   page_peri),
+        ("🖥️ 显卡工具",   page_gpu),
+        ("📺 显示器工具", page_mon),
+        ("💿 硬盘工具",   page_disk),
+        ("🎯 游戏工具",   page_game),
+        ("📊 综合检测",   page_check),
+        ("🧰 其他工具",   page_other),
+    ]
+
+    for text, page in menus:
+        tk.Button(sidebar, text=text, command=lambda p=page: goto(p),
+                  **btn_style).pack(fill="x", pady=1)
+
+    # ========== 页面标题通用函数 ==========
+    def page_title(parent, text):
+        tk.Label(parent, text=text, bg="#f1f5f9",
+                 font=("", 20, "bold")).pack(pady=20, padx=30, anchor="w")
+
+    # ============================================================
+    # ==================== 【页面1：首页】 ========================
+    # ============================================================
+    # ===== 顶部蓝色横幅 =====
+    home_top = tk.Frame(page_home, bg="#2563eb", height=110)
+    home_top.pack(fill="x")
+    home_top.pack_propagate(False)
+
+    tk.Label(home_top, text="🛠 Ludus Toolbox", bg="#2563eb", fg="white",
+             font=("", 22, "bold")).pack(pady=(20, 0))
+    tk.Label(home_top, text="硬件检测 · 烤机测试 · 性能跑分 一站式工具",
+             bg="#2563eb", fg="#bfdbfe", font=("", 11)).pack(pady=6)
+
+    # ===== 常用工具快捷区 =====
+    tk.Label(page_home, text="⚡ 常用工具", bg="#f1f5f9",
+             font=("", 14, "bold")).pack(pady=(20, 8), padx=30, anchor="w")
+
+    quick_tools = tk.Frame(page_home, bg="#f1f5f9")
+    quick_tools.pack(padx=30, fill="x")
+
+    q_btn = {"width": 15, "height": 3, "bg": "white",
+             "relief": "groove", "font": ("", 11), "cursor": "hand2"}
+
+    # 常用工具按钮
+    tk.Button(quick_tools, text="CPU-Z\n处理器检测",
+              command=lambda: open_tool("tools/处理器工具/CPUZ/cpuz_x64.exe"), **q_btn
+              ).pack(side="left", padx=(0, 12))
+
+    tk.Button(quick_tools, text="GPU-Z\n显卡检测",
+              command=lambda: open_tool("tools/显卡工具/GPUZ/GPU-Z.exe"), **q_btn
+              ).pack(side="left", padx=12)
+
+    tk.Button(quick_tools, text="CrystalDiskInfo\n硬盘健康",
+              command=lambda: open_tool("tools/硬盘工具/CrystalDiskInfo/DiskInfo64S.exe"), **q_btn
+              ).pack(side="left", padx=12)
+
+    tk.Button(quick_tools, text="AIDA64\n综合检测",
+              command=lambda: open_tool("tools/综合检测/AIDA64/aida64.exe"), **q_btn
+              ).pack(side="left", padx=12)
+
+    # ===== 系统信息卡片 =====
+    tk.Label(page_home, text="📊 系统概览", bg="#f1f5f9",
+             font=("", 14, "bold")).pack(pady=(25, 8), padx=30, anchor="w")
+
+    info_card = tk.Frame(page_home, bg="white", relief="groove")
+    info_card.pack(padx=30, fill="x")
+
+    info_style = {"bg": "white", "font": ("", 10)}
+
+    # 第一行
+    line1 = tk.Frame(info_card, bg="white")
+    line1.pack(fill="x", padx=20, pady=(15, 5))
+
+    tk.Label(line1, text="💻 处理器：", **info_style).pack(side="left")
+    cpu_text = tk.Label(line1, text="待检测", fg="#94a3b8", **info_style)
+    cpu_text.pack(side="left", padx=(5, 35))
+
+    tk.Label(line1, text="🎮 显卡：", **info_style).pack(side="left")
+    gpu_text = tk.Label(line1, text="待检测", fg="#94a3b8", **info_style)
+    gpu_text.pack(side="left", padx=(5, 35))
+
+    tk.Label(line1, text="💾 内存：", **info_style).pack(side="left")
+    ram_text = tk.Label(line1, text="待检测", fg="#94a3b8", **info_style)
+    ram_text.pack(side="left", padx=5)
+
+    # 第二行
+    line2 = tk.Frame(info_card, bg="white")
+    line2.pack(fill="x", padx=20, pady=(5, 15))
+
+    tk.Label(line2, text="💿 硬盘：", **info_style).pack(side="left")
+    disk_text = tk.Label(line2, text="待检测", fg="#94a3b8", **info_style)
+    disk_text.pack(side="left", padx=(5, 35))
+
+    tk.Label(line2, text="🌡️ CPU温度：", **info_style).pack(side="left")
+    temp_text = tk.Label(line2, text="待检测", fg="#94a3b8", **info_style)
+    temp_text.pack(side="left", padx=(5, 35))
+
+    tk.Label(line2, text="⚙️ 系统：", **info_style).pack(side="left")
+    sys_text = tk.Label(line2, text="待检测", fg="#94a3b8", **info_style)
+    sys_text.pack(side="left", padx=5)
+
+    # ===== 底部功能按钮 =====
+    bottom = tk.Frame(page_home, bg="#f1f5f9")
+    bottom.pack(pady=30, padx=30, anchor="w")
+
+    # 检查更新
+    tk.Button(bottom, text="🔄 检查更新", width=14, height=2,
+              bg="#10b981", fg="white", relief="flat", cursor="hand2",
+              command=lambda: open_tool("updater.bat")
+              ).pack(side="left", padx=(0, 12))
+
+    # 关于软件
+    tk.Button(bottom, text="ℹ️ 关于软件", width=14, height=2,
+              bg="#6366f1", fg="white", relief="flat", cursor="hand2",
+              command=lambda: open_tool("about.exe")
+              ).pack(side="left", padx=12)
+
+    # ============================================================
+    # ==================== 【页面2：处理器工具】 ==================
+    # ============================================================
+    page_title(page_cpu, "处理器工具")
+
+    cpu_box = tk.Frame(page_cpu, bg="#f1f5f9")
+    cpu_box.pack(padx=30, pady=10, anchor="w")
+
+    tk.Button(cpu_box, text="CPU-Z\n处理器检测",
+              command=lambda: open_tool("tools/处理器工具/CPUZ/cpuz_x64.exe"), **big_btn
+              ).grid(row=0, column=0, padx=8, pady=8)
+
+    tk.Button(cpu_box, text="Core Temp\nCPU温度监控",
+              command=lambda: open_tool("tools/处理器工具/CoreTemp/Core Temp x64.exe"), **big_btn
+              ).grid(row=0, column=1, padx=8, pady=8)
+
+    tk.Button(cpu_box, text="Prime95\nCPU烤机",
+              command=lambda: open_tool("tools/处理器工具/Prime95/prime95.exe"), **big_btn
+              ).grid(row=0, column=2, padx=8, pady=8)
+
+    tk.Button(cpu_box, text="LinX\n线性代数烤机",
+              command=lambda: open_tool("tools/处理器工具/LinX/LinX.exe"), **big_btn
+              ).grid(row=0, column=3, padx=8, pady=8)
+
+    tk.Button(cpu_box, text="Super PI\n单线程跑分",
+              command=lambda: open_tool("tools/处理器工具/superpi/Superpi.exe"), **big_btn
+              ).grid(row=1, column=0, padx=8, pady=8)
+
+    tk.Button(cpu_box, text="ThrottleStop\n降频调压",
+              command=lambda: open_tool("tools/处理器工具/ThrottleStop/ThrottleStop.exe"), **big_btn
+              ).grid(row=1, column=1, padx=8, pady=8)
+
+    tk.Button(cpu_box, text="wPrime\n多线程跑分",
+              command=lambda: open_tool("tools/处理器工具/wPrime/wPrime.exe"), **big_btn
+              ).grid(row=1, column=2, padx=8, pady=8)
+
+    tk.Button(cpu_box, text="C2CLatency\n缓存延迟测试",
+              command=lambda: open_tool("tools/处理器工具/C2CLatency/C2CLatency.exe"), **big_btn
+              ).grid(row=1, column=3, padx=8, pady=8)
+
+    # ============================================================
+    # ==================== 【页面3：烤机工具】 ====================
+    # ============================================================
+    page_title(page_stress, "烤机工具")
+
+    stress_box = tk.Frame(page_stress, bg="#f1f5f9")
+    stress_box.pack(padx=30, pady=10, anchor="w")
+
+    tk.Button(stress_box, text="FurMark\n显卡烤机",
+              command=lambda: open_tool("tools/烤鸡工具/FurMark/FurMark.exe"), **big_btn
+              ).grid(row=0, column=0, padx=8, pady=8)
+
+    tk.Button(stress_box, text="FurMark 2\n新版烤机",
+              command=lambda: open_tool("tools/烤鸡工具/FurMark_win64/FurMark_GUI.exe"), **big_btn
+              ).grid(row=0, column=1, padx=8, pady=8)
+
+    tk.Button(stress_box, text="GPU Shark\n显卡监控",
+              command=lambda: open_tool("tools/烤鸡工具/FurMark_win64/gpushark/gpushark_x64.exe"), **big_btn
+              ).grid(row=0, column=2, padx=8, pady=8)
+
+    # ============================================================
+    # ==================== 【页面4：内存工具】 ====================
+    # ============================================================
+    page_title(page_ram, "内存工具")
+
+    ram_box = tk.Frame(page_ram, bg="#f1f5f9")
+    ram_box.pack(padx=30, pady=10, anchor="w")
+
+    tk.Button(ram_box, text="MemTest\n内存检测",
+              command=lambda: open_tool("tools/内存工具/memtest/memtest.exe"), **big_btn
+              ).grid(row=0, column=0, padx=8, pady=8)
+
+    tk.Button(ram_box, text="MemTest64\n64位内存检测",
+              command=lambda: open_tool("tools/内存工具/memtest64/MemTest64.exe"), **big_btn
+              ).grid(row=0, column=1, padx=8, pady=8)
+
+    tk.Button(ram_box, text="MemTest Pro\n专业内存检测",
+              command=lambda: open_tool("tools/内存工具/memtestpro/memtestpro.exe"), **big_btn
+              ).grid(row=0, column=2, padx=8, pady=8)
+
+    tk.Button(ram_box, text="TestMem5\nTM5内存烤机",
+              command=lambda: open_tool("tools/内存工具/tm5/TM5.exe"), **big_btn
+              ).grid(row=0, column=3, padx=8, pady=8)
+
+    tk.Button(ram_box, text="Thaiphoon\n内存颗粒检测",
+              command=lambda: open_tool("tools/内存工具/Thaiphoon/Thaiphoon.exe"), **big_btn
+              ).grid(row=1, column=0, padx=8, pady=8)
+
+    tk.Button(ram_box, text="ZenTimings\nAMD内存时序",
+              command=lambda: open_tool("tools/内存工具/ZenTimings/ZenTimings.exe"), **big_btn
+              ).grid(row=1, column=1, padx=8, pady=8)
+
+    tk.Button(ram_box, text="魔方内存盘\n虚拟内存盘",
+              command=lambda: open_tool("tools/内存工具/魔方内存盘/ramdisk.exe"), **big_btn
+              ).grid(row=1, column=2, padx=8, pady=8)
+
+    # ============================================================
+    # ==================== 【页面5：外设工具】 ====================
+    # ============================================================
+    page_title(page_peri, "外设工具")
+
+    peri_box = tk.Frame(page_peri, bg="#f1f5f9")
+    peri_box.pack(padx=30, pady=10, anchor="w")
+
+    tk.Button(peri_box, text="鼠标回报率测试",
+              command=lambda: open_tool("tools/外设工具/MOUSERATE/MOUSERATE.EXE"), **big_btn
+              ).grid(row=0, column=0, padx=8, pady=8)
+
+    tk.Button(peri_box, text="MouseTester\n鼠标测试",
+              command=lambda: open_tool("tools/外设工具/MouseTester/MouseTester.exe"), **big_btn
+              ).grid(row=0, column=1, padx=8, pady=8)
+
+    tk.Button(peri_box, text="AresonMouseTest\n鼠标测试",
+              command=lambda: open_tool("tools/外设工具/AresonMouseTest/鼠标测试软件AresonMouseTestProgram.exe"), **big_btn
+              ).grid(row=0, column=2, padx=8, pady=8)
+
+    tk.Button(peri_box, text="双击检测\n鼠标单击变双击",
+              command=lambda: open_tool("tools/外设工具/鼠标单机变双击测试器/鼠标单击变双击测试器V2.0.exe"), **big_btn
+              ).grid(row=0, column=3, padx=8, pady=8)
+
+    tk.Button(peri_box, text="键盘按键测试",
+              command=lambda: open_tool("tools/外设工具/Keyboard Test Utility/Keyboard Test Utility.exe"), **big_btn
+              ).grid(row=1, column=0, padx=8, pady=8)
+
+    tk.Button(peri_box, text="KeyTweak\n按键改键",
+              command=lambda: open_tool("tools/外设工具/KeyTweak/KeyTweak.exe"), **big_btn
+              ).grid(row=1, column=1, padx=8, pady=8)
+
+    tk.Button(peri_box, text="在线外设测试\n网页版测试",
+              command=lambda: open_tool("tools/外设工具/在线外设测试中心/在线外设测试中心.bat"), **big_btn
+              ).grid(row=1, column=2, padx=8, pady=8)
+
+    # ============================================================
+    # ==================== 【页面6：显卡工具】 ====================
+    # ============================================================
+    page_title(page_gpu, "显卡工具")
+
+    gpu_box = tk.Frame(page_gpu, bg="#f1f5f9")
+    gpu_box.pack(padx=30, pady=10, anchor="w")
+
+    tk.Button(gpu_box, text="GPU-Z\n显卡信息检测",
+              command=lambda: open_tool("tools/显卡工具/GPUZ/GPU-Z.exe"), **big_btn
+              ).grid(row=0, column=0, padx=8, pady=8)
+
+    tk.Button(gpu_box, text="DDU\n显卡驱动卸载",
+              command=lambda: open_tool("tools/显卡工具/DDU/Display Driver Uninstaller.exe"), **big_btn
+              ).grid(row=0, column=1, padx=8, pady=8)
+
+    tk.Button(gpu_box, text="NVIDIA Inspector\nN卡超频",
+              command=lambda: open_tool("tools/显卡工具/nvidiaInspector/nvidiaInspector.exe"), **big_btn
+              ).grid(row=0, column=2, padx=8, pady=8)
+
+    tk.Button(gpu_box, text="Profile Inspector\nN卡配置",
+              command=lambda: open_tool("tools/显卡工具/nvidiaProfileInspector/nvidiaProfileInspector.exe"), **big_btn
+              ).grid(row=0, column=3, padx=8, pady=8)
+
+    tk.Button(gpu_box, text="DXVAChecker\n硬件加速检测",
+              command=lambda: open_tool("tools/显卡工具/dxvachecker/DXVAChecker.exe"), **big_btn
+              ).grid(row=1, column=0, padx=8, pady=8)
+
+    tk.Button(gpu_box, text="GpuTest\n显卡跑分测试",
+              command=lambda: open_tool("tools/显卡工具/GpuTest_Windows x64/GpuTest_GUI.exe"), **big_btn
+              ).grid(row=1, column=1, padx=8, pady=8)
+
+    tk.Button(gpu_box, text="AMD驱动下载\n官方驱动",
+              command=lambda: open_tool("tools/显卡工具/AMD显卡驱动下载/Start.bat"), **big_btn
+              ).grid(row=1, column=2, padx=8, pady=8)
+
+    tk.Button(gpu_box, text="N卡驱动下载\n官方驱动",
+              command=lambda: open_tool("tools/显卡工具/Nvidia显卡驱动下载/Start.bat"), **big_btn
+              ).grid(row=1, column=3, padx=8, pady=8)
+
+    # ============================================================
+    # ==================== 【页面7：显示器工具】 ==================
+    # ============================================================
+    page_title(page_mon, "显示器工具")
+
+    mon_box = tk.Frame(page_mon, bg="#f1f5f9")
+    mon_box.pack(padx=30, pady=10, anchor="w")
+
+    tk.Button(mon_box, text="UFO测试\n刷新率测试",
+              command=lambda: open_tool("tools/显示器工具/UFO测试/Start.bat"), **big_btn
+              ).grid(row=0, column=0, padx=8, pady=8)
+
+    tk.Button(mon_box, text="在线屏幕测试\n坏点/色彩",
+              command=lambda: open_tool("tools/显示器工具/在线屏幕测试/在线屏幕测试.bat"), **big_btn
+              ).grid(row=0, column=1, padx=8, pady=8)
+
+    tk.Button(mon_box, text="色域检测\n显示器信息",
+              command=lambda: open_tool("tools/显示器工具/色域检测/monitorinfo.exe"), **big_btn
+              ).grid(row=0, column=2, padx=8, pady=8)
+
+    # ============================================================
+    # ==================== 【页面8：硬盘工具】 ====================
+    # ============================================================
+    page_title(page_disk, "硬盘工具")
+
+    disk_box = tk.Frame(page_disk, bg="#f1f5f9")
+    disk_box.pack(padx=30, pady=10, anchor="w")
+
+    tk.Button(disk_box, text="CrystalDiskInfo\n硬盘健康检测",
+              command=lambda: open_tool("tools/硬盘工具/CrystalDiskInfo/DiskInfo64S.exe"), **big_btn
+              ).grid(row=0, column=0, padx=8, pady=8)
+
+    tk.Button(disk_box, text="CrystalDiskMark\n硬盘测速",
+              command=lambda: open_tool("tools/硬盘工具/CrystalDiskMark/DiskMark64.exe"), **big_btn
+              ).grid(row=0, column=1, padx=8, pady=8)
+
+    tk.Button(disk_box, text="AS SSD Benchmark\nSSD测速",
+              command=lambda: open_tool("tools/硬盘工具/ASSSDBenchmark/ASSSDBenchmark.exe"), **big_btn
+              ).grid(row=0, column=2, padx=8, pady=8)
+
+    tk.Button(disk_box, text="ATTO Disk Bench\n磁盘基准测试",
+              command=lambda: open_tool("tools/硬盘工具/ATTODISKBENCHMARK/ATTO 磁盘基准测试.exe"), **big_btn
+              ).grid(row=0, column=3, padx=8, pady=8)
+
+    tk.Button(disk_box, text="HD Tune\n硬盘检测",
+              command=lambda: open_tool("tools/硬盘工具/HDTune/HDTune.exe"), **big_btn
+              ).grid(row=1, column=0, padx=8, pady=8)
+
+    tk.Button(disk_box, text="DiskGenius\n分区工具",
+              command=lambda: open_tool("tools/硬盘工具/DiskGenius/DiskGenius.exe"), **big_btn
+              ).grid(row=1, column=1, padx=8, pady=8)
+
+    tk.Button(disk_box, text="Defraggler\n磁盘碎片整理",
+              command=lambda: open_tool("tools/硬盘工具/Defraggler/Defraggler.exe"), **big_btn
+              ).grid(row=1, column=2, padx=8, pady=8)
+
+    tk.Button(disk_box, text="FinalData\n数据恢复",
+              command=lambda: open_tool("tools/硬盘工具/finaldata/FINALDATA.exe"), **big_btn
+              ).grid(row=1, column=3, padx=8, pady=8)
+
+    tk.Button(disk_box, text="H2testw\nU盘测速",
+              command=lambda: open_tool("tools/硬盘工具/H2testw/h2testw_1.4.exe"), **big_btn
+              ).grid(row=2, column=0, padx=8, pady=8)
+
+    tk.Button(disk_box, text="MyDiskTest\nU盘检测",
+              command=lambda: open_tool("tools/硬盘工具/mydisktest/MyDiskTest_v298.exe"), **big_btn
+              ).grid(row=2, column=1, padx=8, pady=8)
+
+    tk.Button(disk_box, text="SpaceSniffer\n空间分析",
+              command=lambda: open_tool("tools/硬盘工具/SpaceSniffer/SpaceSniffer.exe"), **big_btn
+              ).grid(row=2, column=2, padx=8, pady=8)
+
+    tk.Button(disk_box, text="WizTree\n大文件查找",
+              command=lambda: open_tool("tools/硬盘工具/WizTree/WizTree.exe"), **big_btn
+              ).grid(row=2, column=3, padx=8, pady=8)
+
+    tk.Button(disk_box, text="WinDirStat\n磁盘统计",
+              command=lambda: open_tool("tools/硬盘工具/windirstat/windirstat.exe"), **big_btn
+              ).grid(row=3, column=0, padx=8, pady=8)
+
+    tk.Button(disk_box, text="SSD-Z\nSSD信息检测",
+              command=lambda: open_tool("tools/硬盘工具/SSDZ/SSDZ.exe"), **big_btn
+              ).grid(row=3, column=1, padx=8, pady=8)
+
+    tk.Button(disk_box, text="TxBENCH\nSSD测速",
+              command=lambda: open_tool("tools/硬盘工具/TxBENCH/TxBENCH.exe"), **big_btn
+              ).grid(row=3, column=2, padx=8, pady=8)
+
+    tk.Button(disk_box, text="URWTest\nU盘读写测试",
+              command=lambda: open_tool("tools/硬盘工具/URWTEST/urwtest_v18.exe"), **big_btn
+              ).grid(row=3, column=3, padx=8, pady=8)
+
+    tk.Button(disk_box, text="LLFTOOL\n低级格式化",
+              command=lambda: open_tool("tools/硬盘工具/LLFTOOL/LLFTOOL.exe"), **big_btn
+              ).grid(row=4, column=0, padx=8, pady=8)
+
+    tk.Button(disk_box, text="FlashMaster\nU盘量产",
+              command=lambda: open_tool("tools/硬盘工具/FlashMaster/FlashMaster.bat"), **big_btn
+              ).grid(row=4, column=1, padx=8, pady=8)
+
+    tk.Button(disk_box, text="SSD Utilities\nSSD工具集",
+              command=lambda: open_tool("tools/硬盘工具/SSD utils/Start.bat"), **big_btn
+              ).grid(row=4, column=2, padx=8, pady=8)
+
+    tk.Button(disk_box, text="魔方数据恢复\n文件恢复",
+              command=lambda: open_tool("tools/硬盘工具/魔方数据恢复/魔方数据恢复.exe"), **big_btn
+              ).grid(row=4, column=3, padx=8, pady=8)
+
+    # ============================================================
+    # ==================== 【页面9：游戏工具】 ====================
+    # ============================================================
+    page_title(page_game, "游戏工具")
+
+    game_box = tk.Frame(page_game, bg="#f1f5f9")
+    game_box.pack(padx=30, pady=10, anchor="w")
+
+    tk.Button(game_box, text="Steam\n游戏平台",
+              command=lambda: open_tool("tools/游戏工具/Steam/下载Steam.bat"), **big_btn
+              ).grid(row=0, column=0, padx=8, pady=8)
+
+    tk.Button(game_box, text="Epic Games\n游戏平台",
+              command=lambda: open_tool("tools/游戏工具/epic/Start.bat"), **big_btn
+              ).grid(row=0, column=1, padx=8, pady=8)
+
+    tk.Button(game_box, text="EA App\nEA游戏平台",
+              command=lambda: open_tool("tools/游戏工具/eaapp/Start.bat"), **big_btn
+              ).grid(row=0, column=2, padx=8, pady=8)
+
+    tk.Button(game_box, text="Battle.net\n暴雪战网",
+              command=lambda: open_tool("tools/游戏工具/battle/Start.bat"), **big_btn
+              ).grid(row=0, column=3, padx=8, pady=8)
+
+    tk.Button(game_box, text="GameBuff\n游戏修改器",
+              command=lambda: open_tool("tools/游戏工具/GameBuff/Start.bat"), **big_btn
+              ).grid(row=1, column=0, padx=8, pady=8)
+
+    # ============================================================
+    # ==================== 【页面10：综合检测】 ===================
+    # ============================================================
+    page_title(page_check, "综合检测")
+
+    check_box = tk.Frame(page_check, bg="#f1f5f9")
+    check_box.pack(padx=30, pady=10, anchor="w")
+
+    tk.Button(check_box, text="AIDA64\n全面硬件检测",
+              command=lambda: open_tool("tools/综合检测/AIDA64/aida64.exe"), **big_btn
+              ).grid(row=0, column=0, padx=8, pady=8)
+
+    tk.Button(check_box, text="HWiNFO\n硬件信息检测",
+              command=lambda: open_tool("tools/综合检测/hwinfo/HWiNFO64.exe"), **big_btn
+              ).grid(row=0, column=1, padx=8, pady=8)
+
+    tk.Button(check_box, text="HWMonitor\n硬件监控",
+              command=lambda: open_tool("tools/综合检测/HWMonitor/HWMonitor_x64.exe"), **big_btn
+              ).grid(row=0, column=2, padx=8, pady=8)
+
+    tk.Button(check_box, text="Speccy\n系统信息",
+              command=lambda: open_tool("tools/综合检测/speccy/Speccy64.exe"), **big_btn
+              ).grid(row=0, column=3, padx=8, pady=8)
+
+    tk.Button(check_box, text="RWEverything\n硬件底层读取",
+              command=lambda: open_tool("tools/综合检测/RWEverything/Rw.exe"), **big_btn
+              ).grid(row=1, column=0, padx=8, pady=8)
+
+    # ============================================================
+    # ==================== 【页面11：其他工具】 ===================
+    # ============================================================
+    page_title(page_other, "其他工具")
+
+    other_box = tk.Frame(page_other, bg="#f1f5f9")
+    other_box.pack(padx=30, pady=10, anchor="w")
+
+    tk.Button(other_box, text="BatteryInfoView\n电池信息",
+              command=lambda: open_tool("tools/其他工具/BatteryInfoView/BatteryInfoView.exe"), **big_btn
+              ).grid(row=0, column=0, padx=8, pady=8)
+
+    tk.Button(other_box, text="BlueScreenView\n蓝屏分析",
+              command=lambda: open_tool("tools/其他工具/bluescreenview/BlueScreenViewx64.exe"), **big_btn
+              ).grid(row=0, column=1, padx=8, pady=8)
+
+    tk.Button(other_box, text="DesktopOK\n桌面图标布局",
+              command=lambda: open_tool("tools/其他工具/DesktopOK/DesktopOK.exe"), **big_btn
+              ).grid(row=0, column=2, padx=8, pady=8)
+
+    tk.Button(other_box, text="DirectX Repair\n运行库修复",
+              command=lambda: open_tool("tools/其他工具/DirectX_Repair/DirectX Repair.exe"), **big_btn
+              ).grid(row=0, column=3, padx=8, pady=8)
+
+    tk.Button(other_box, text="Dism++\n系统清理优化",
+              command=lambda: open_tool("tools/其他工具/Dism++/Dism++x64.exe"), **big_btn
+              ).grid(row=1, column=0, padx=8, pady=8)
+
+    tk.Button(other_box, text="Everything\n文件秒搜",
+              command=lambda: open_tool("tools/其他工具/Everything/everything.exe"), **big_btn
+              ).grid(row=1, column=1, padx=8, pady=8)
+
+    tk.Button(other_box, text="Geek Uninstaller\n软件卸载",
+              command=lambda: open_tool("tools/其他工具/Geek Uninstaller/Geek Uninstaller.exe"), **big_btn
+              ).grid(row=1, column=2, padx=8, pady=8)
+
+    tk.Button(other_box, text="GifCam\nGIF录制",
+              command=lambda: open_tool("tools/其他工具/gifcam/GifCam.exe"), **big_btn
+              ).grid(row=1, column=3, padx=8, pady=8)
+
+    tk.Button(other_box, text="MSI Afterburner\n显卡超频",
+              command=lambda: open_tool("tools/其他工具/MSIAfterburnerSetup/start.bat"), **big_btn
+              ).grid(row=2, column=0, padx=8, pady=8)
+
+    tk.Button(other_box, text="next, itellyou\n系统下载",
+              command=lambda: open_tool("tools/其他工具/next_itellyou/Start.bat"), **big_btn
+              ).grid(row=2, column=1, padx=8, pady=8)
+
+    tk.Button(other_box, text="Process Explorer\n进程管理器",
+              command=lambda: open_tool("tools/其他工具/procexp/procexp64.exe"), **big_btn
+              ).grid(row=2, column=2, padx=8, pady=8)
+
+    tk.Button(other_box, text="Rufus\nU盘启动制作",
+              command=lambda: open_tool("tools/其他工具/rufus/rufus.exe"), **big_btn
+              ).grid(row=2, column=3, padx=8, pady=8)
+
+    tk.Button(other_box, text="UltraISO\n镜像编辑",
+              command=lambda: open_tool("tools/其他工具/ULTRAISO/ULTRAISO.exe"), **big_btn
+              ).grid(row=3, column=0, padx=8, pady=8)
+
+    tk.Button(other_box, text="Ventoy\n多系统启动U盘",
+              command=lambda: open_tool("tools/其他工具/ventoy/Ventoy2Disk.exe"), **big_btn
+              ).grid(row=3, column=1, padx=8, pady=8)
+
+    tk.Button(other_box, text="WinDbg\n蓝屏调试",
+              command=lambda: open_tool("tools/其他工具/WinDbg/windbg.exe"), **big_btn
+              ).grid(row=3, column=2, padx=8, pady=8)
+
+    tk.Button(other_box, text="CPU天梯图\n性能排行",
+              command=lambda: open_tool("tools/其他工具/天梯图/CPU天梯图.jpg"), **big_btn
+              ).grid(row=3, column=3, padx=8, pady=8)
+
+    # ========== 默认显示首页 ==========
+    goto(page_home)
+    # 启动时读取硬件信息
+    root.after(100, refresh_hardware_label)
+
+    # 主循环
+    root.mainloop()
+
+# ===================== 标准程序入口（阻止子进程重复执行）=====================
+if __name__ == "__main__":
+    # 兼容打包多进程无限弹窗问题
+    import multiprocessing
+    multiprocessing.freeze_support()
+    main()
